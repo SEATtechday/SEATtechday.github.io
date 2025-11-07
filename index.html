@@ -190,7 +190,7 @@
             justify-content: center;
             margin-right: 10px; 
             
-            /* 렌더링 컨텍스트 강화 (iOS 프로그레스바 버그 방지 - index_1의 해결책을 계승) */
+            /* 렌더링 컨텍스트 강화 (iOS 프로그레스바 버그 방지) */
             -webkit-transform: translateZ(0); 
             transform: translateZ(0);
         }
@@ -213,7 +213,7 @@
             background-color: #ffffff;
             transition: none; 
             
-            /* iOS 프로그레스바 문제를 해결하기 위한 하드웨어 가속 설정 (index_1의 해결책을 계승) */
+            /* iOS 프로그레스바 문제를 해결하기 위한 하드웨어 가속 설정 */
             -webkit-transform: translateZ(0); 
             transform: translateZ(0);
         }
@@ -1426,15 +1426,14 @@
 
     <script>
         // 전역 상태 변수
-        let currentlyActiveAudio = null; // 현재 활성화된 Audio 객체
-        let isSeeking = false;           // 탐색(드래그) 중인지 여부
-        let activePlayer = null;         // 현재 활성화된 커스텀 플레이어 UI 엘리먼트
-        let wasPlayingBeforeSeek = false; // 드래그 시작 전 재생 중이었는지 여부
-        let injectedPlayerRow = null;    // 삽입된 플레이어 행 (<tr>)
-        let originalAudioBox = null;     // 숨겨진 원본 🔊 버튼
-        let blockOutsideClick = false;   // Seek 종료 후 외부 클릭 오작동 방지용 플래그
+        let currentlyActiveAudio = null; 
+        let isSeeking = false;           
+        let activePlayer = null;         
+        let wasPlayingBeforeSeek = false; 
+        let injectedPlayerRow = null;    
+        let originalAudioBox = null;     
+        let blockOutsideClick = false;   
         
-
         // 1. 시간 포맷 변환 (초 -> MM:SS)
         function formatTime(seconds) {
             if (isNaN(seconds)) return '00:00';
@@ -1454,7 +1453,6 @@
             const progressFill = playerElement.querySelector('.progress-fill');
             
             if (isNaN(duration) || duration === 0) {
-                // 메타데이터 로딩 중
                 timeDisplay.textContent = '00:00 / 00:00';
                 progressFill.style.width = '0%';
                 return;
@@ -1465,11 +1463,54 @@
             progressFill.style.width = `${progress}%`;
         }
 
-        // 3. 오디오 상태 변경 리스너 등록
+        // 3. 플레이어 UI 닫기 및 원본 🔊 버튼 표시 (시간은 유지)
+        function closePlayerUI(audioId) {
+            const playerElement = document.querySelector(`.custom-audio-player[data-audio-id="${audioId}"]`);
+            if (playerElement) {
+                playerElement.classList.remove('active');
+                playerElement.style.display = 'none';
+                
+                const btn = playerElement.querySelector('.play-pause-btn');
+                if(btn) {
+                    btn.textContent = '▶';
+                    btn.classList.remove('playing');
+                    btn.dataset.state = 'paused';
+                }
+            }
+            
+            if (injectedPlayerRow) {
+                injectedPlayerRow.remove();
+                injectedPlayerRow = null;
+            }
+            if (originalAudioBox) {
+                originalAudioBox.classList.remove('hidden');
+                originalAudioBox = null;
+            }
+
+            currentlyActiveAudio = null;
+            isSeeking = false;
+            activePlayer = null; 
+            wasPlayingBeforeSeek = false;
+            blockOutsideClick = false; 
+        }
+        
+        // 4. 오디오 상태 초기화 (시간 초기화 여부 결정)
+        // shouldResetTime: true이면 currentTime = 0 (재생 종료 또는 다른 오디오 선택 시)
+        // shouldResetTime: false이면 currentTime 유지 (외부 클릭 또는 🔊 버튼 재클릭으로 UI 닫을 시)
+        function resetAudioState(audio, shouldResetTime = true) {
+            if (audio) {
+                audio.pause();
+                if (shouldResetTime) {
+                    audio.currentTime = 0;
+                }
+            }
+        }
+        
+        // 5. 오디오 상태 변경 리스너 등록
         function attachAudioListeners(audio, playerElement) {
             // 재생 시간 업데이트 리스너 (반복)
             const timeUpdateHandler = () => {
-                if (!isSeeking) { // 드래그 중이 아닐 때만 UI 업데이트
+                if (!isSeeking) { 
                     updateTimeDisplay(audio, playerElement);
                 }
             };
@@ -1483,9 +1524,11 @@
             audio.removeEventListener('loadedmetadata', loadedMetadataHandler);
             audio.addEventListener('loadedmetadata', loadedMetadataHandler);
 
-            // 재생 종료 시 초기화
+            // 재생 종료 시 초기화 (시간 0으로 리셋 후 UI 닫기)
             const endedHandler = () => {
-                resetPlayer(audio);
+                resetAudioState(audio, true); // 오디오 시간 0으로 리셋
+                updateTimeDisplay(audio, playerElement); // 00:00 / 00:00 으로 표시
+                closePlayerUI(audio.id); // UI 닫기
             };
             audio.removeEventListener('ended', endedHandler);
             audio.addEventListener('ended', endedHandler);
@@ -1494,102 +1537,56 @@
             const errorHandler = (e) => {
                 console.error(`Audio Error for ${audio.id}:`, e);
                 playerElement.querySelector('.time-display').textContent = 'Error';
-                resetPlayer(audio);
+                resetAudioState(audio, true); 
+                closePlayerUI(audio.id);
             };
             audio.removeEventListener('error', errorHandler);
             audio.addEventListener('error', errorHandler);
         }
 
-        // 4. 플레이어 초기화/숨김
-        function resetPlayer(audio) {
-            if (audio) {
-                audio.pause();
-                audio.currentTime = 0;
-            }
-
-            // 1. 이전 오디오 초기화
-            if (currentlyActiveAudio && currentlyActiveAudio.id !== (audio ? audio.id : '')) {
-                currentlyActiveAudio.pause();
-                currentlyActiveAudio.currentTime = 0;
-            }
-
-            // 2. 원본 플레이어 UI 템플릿 초기화 (활성화 클래스 제거)
-            const originalPlayerElement = document.querySelector(`.custom-audio-player[data-audio-id="${audio ? audio.id : currentlyActiveAudio.id}"]`);
-            if (originalPlayerElement) {
-                originalPlayerElement.classList.remove('active');
-                originalPlayerElement.style.display = 'none';
-            }
-            
-            // 3. 주입된 플레이어 행 제거 및 🔊 버튼 표시
-            if (injectedPlayerRow) {
-                injectedPlayerRow.remove();
-                injectedPlayerRow = null;
-            }
-            if (originalAudioBox) {
-                originalAudioBox.classList.remove('hidden');
-                originalAudioBox = null;
-            }
-
-            // 4. 상태 변수 초기화
-            currentlyActiveAudio = null;
-            isSeeking = false;
-            activePlayer = null; 
-            wasPlayingBeforeSeek = false;
-            blockOutsideClick = false; 
-        }
-
-
-        // 5. 오디오 켜기/끄기
+        // 6. 오디오 켜기/끄기
         function toggleCustomAudio(event, audioId, boxElement) {
             event.stopPropagation();
             const audioToActivate = document.getElementById(audioId);
             const clickedRow = boxElement.closest('tr');
             
-            // A. 현재 재생 중인 오디오가 있다면 중지 및 초기화
+            // A. 현재 재생 중인 오디오가 있다면 중지 및 UI 닫기
             if (currentlyActiveAudio && currentlyActiveAudio.id === audioId) {
-                // 같은 오디오를 다시 클릭한 경우 -> 닫기
-                resetPlayer(audioToActivate);
+                // 같은 오디오를 다시 클릭한 경우 -> 오디오 일시정지 및 UI 닫기 (시간 유지)
+                resetAudioState(audioToActivate, false); 
+                closePlayerUI(audioId);
                 return;
             } else if (currentlyActiveAudio) {
-                // 다른 오디오를 클릭한 경우 -> 이전 오디오 초기화
-                resetPlayer(currentlyActiveAudio);
+                // 다른 오디오를 클릭한 경우 -> 이전 오디오 초기화 (시간 0으로 리셋) 후 UI 닫기
+                const previousAudioId = currentlyActiveAudio.id;
+                resetAudioState(currentlyActiveAudio, true); 
+                closePlayerUI(previousAudioId);
             }
 
             // B. 새로운 오디오 플레이어 활성화 (DOM 조작)
-            
-            // a. 새로운 행을 생성하고 클래스 적용
             const newRow = document.createElement('tr');
             newRow.classList.add('player-row-injected');
-            
-            // b. 3개의 열(No., 전시품, 해설)을 덮는 하나의 셀 생성
             const newCell = document.createElement('td');
             newCell.setAttribute('colspan', '3');
             
-            // c. 숨겨진 플레이어 템플릿 찾기 및 복사하여 주입할 UI로 사용
             const originalPlayerElement = boxElement.nextElementSibling;
             if (!originalPlayerElement || !originalPlayerElement.classList.contains('custom-audio-player')) return;
 
-            // 템플릿을 복사하는 대신, 기존 DOM 요소를 이동시킵니다. (CSS 클래스로 위치/표시 변경)
             const activePlayerUI = originalPlayerElement; 
             activePlayer = activePlayerUI;
             
-            // d. 플레이어 UI 업데이트 및 활성화
             activePlayerUI.classList.add('active');
-            activePlayerUI.style.display = 'flex'; // 명시적 표시
+            activePlayerUI.style.display = 'flex'; 
             
-            // e. UI 구성 및 삽입
             newCell.appendChild(activePlayerUI);
             newRow.appendChild(newCell);
             
-            // f. 클릭된 행 다음에 삽입
             clickedRow.parentNode.insertBefore(newRow, clickedRow.nextSibling);
             injectedPlayerRow = newRow;
 
-            // g. 원본 🔊 아이콘 숨기기
             boxElement.classList.add('hidden');
             originalAudioBox = boxElement;
 
-            // h. 현재 오디오 업데이트 및 리스너 등록
             currentlyActiveAudio = audioToActivate;
             attachAudioListeners(audioToActivate, activePlayerUI);
             
@@ -1602,11 +1599,12 @@
                  }, { once: true });
             } else {
                  updateTimeDisplay(audioToActivate, activePlayerUI);
-                 playPauseAudio(null, audioToActivate.id, activePlayerUI);
+                 // 이전에 멈춘 시간대(currentTime > 0)라면 재개됨
+                 playPauseAudio(null, audioToActivate.id, activePlayerUI); 
             }
         }
 
-        // 6. 재생/일시정지 버튼 클릭 처리
+        // 7. 재생/일시정지 버튼 클릭 처리
         function playPauseAudio(event, audioId, playerElement) {
             if (event) {
                 event.stopPropagation();
@@ -1614,22 +1612,7 @@
             const audio = document.getElementById(audioId);
             const btn = playerElement.querySelector('.play-pause-btn');
 
-            // 6-1. 다른 오디오가 재생 중이라면 중지 및 초기화 (safety check)
-            if (currentlyActiveAudio && currentlyActiveAudio.id !== audioId) {
-                // 이 로직은 toggleCustomAudio에서 처리되어야 하지만, 혹시 모를 경우에 대비하여 현재 오디오만 일시정지
-                currentlyActiveAudio.pause();
-                const prevPlayer = document.querySelector(`.custom-audio-player[data-audio-id="${currentlyActiveAudio.id}"]`);
-                if (prevPlayer) {
-                    const prevBtn = prevPlayer.querySelector('.play-pause-btn');
-                    prevBtn.textContent = '▶';
-                    prevBtn.classList.remove('playing');
-                    prevBtn.dataset.state = 'paused';
-                }
-            }
-
-            // 6-2. 재생/일시정지 토글
             if (audio.paused) {
-                // 재생 시도
                 audio.play().then(() => {
                     btn.textContent = '⏸';
                     btn.classList.add('playing');
@@ -1639,7 +1622,6 @@
                     console.error("Playback failed:", error);
                 });
             } else {
-                // 일시정지
                 audio.pause();
                 btn.textContent = '▶';
                 btn.classList.remove('playing');
@@ -1647,16 +1629,27 @@
             }
         }
         
-        // 7. 탐색 (Seeking) 로직
-        
-        // 탐색 위치 계산 및 UI 업데이트 함수
+        // 8. 탐색 위치 계산 및 UI 업데이트 함수
         function setSeekTime(event, container, audio, isOnlyUI = false) {
             const rect = container.getBoundingClientRect();
-            // 터치 이벤트와 마우스 이벤트 모두 처리
-            const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+            
+            // ⭐️ 수정: Android touchend 시 changedTouches를 사용하여 정확한 좌표 획득
+            const touch = event.touches && event.touches.length > 0
+                ? event.touches[0] // touchstart, touchmove
+                : (event.changedTouches && event.changedTouches.length > 0 
+                    ? event.changedTouches[0] // touchend
+                    : null);
+            
+            const clientX = touch ? touch.clientX : event.clientX; 
+
+            if (clientX === undefined) {
+                // 좌표를 얻지 못하면 현재 시간 반환
+                console.error(`ClientX is undefined for seek event type: ${event.type}. Aborting seek.`);
+                return audio.currentTime; 
+            }
+
             let clickX = clientX - rect.left;
             
-            // 경계를 벗어나지 않도록 클램핑
             if (clickX < 0) clickX = 0;
             if (clickX > rect.width) clickX = rect.width;
 
@@ -1674,7 +1667,6 @@
             if (!isOnlyUI && !isSeeking) { 
                 audio.currentTime = seekTime;
                 if (!audio.paused) {
-                    // 클릭 후 재생 중이었다면 재생 유지
                     audio.play().catch(e => console.error("Play failed after click seek:", e));
                 }
             }
@@ -1682,24 +1674,22 @@
             return seekTime; 
         }
 
-        // 7-1. 탐색 시작 (mousedown/touchstart)
+        // 8-1. 탐색 시작 (mousedown/touchstart)
         function handleSeekStart(event) {
             if (!currentlyActiveAudio || isSeeking) return;
 
             isSeeking = true;
-            event.preventDefault(); // 스크롤 방지 (터치)
+            event.preventDefault(); 
 
             activePlayer = event.currentTarget.closest('.custom-audio-player');
             const audioId = activePlayer.dataset.audioId;
             const audio = document.getElementById(audioId);
             
-            // 드래그 시작 시 오디오 상태 저장 및 일시정지 (iOS 안정성)
             wasPlayingBeforeSeek = !audio.paused; 
             if (wasPlayingBeforeSeek) { 
                 audio.pause(); 
             }
 
-            // 이벤트 리스너 연결
             if (event.type === 'mousedown') {
                 document.addEventListener('mousemove', handleSeekMove);
                 document.addEventListener('mouseup', handleSeekEnd);
@@ -1708,29 +1698,26 @@
                 document.addEventListener('touchend', handleSeekEnd);
             }
             
-            // 시작 위치 설정 (UI만 업데이트)
             setSeekTime(event, event.currentTarget, audio, true); 
         }
 
-        // 7-2. 드래그 이동 처리 (mousemove/touchmove)
+        // 8-2. 드래그 이동 처리 (mousemove/touchmove)
         function handleSeekMove(event) {
             if (!isSeeking || !currentlyActiveAudio || !activePlayer) return;
-            event.preventDefault(); // 터치 스크롤 방지
+            event.preventDefault(); 
             event.stopPropagation();
             const progressBarContainer = activePlayer.querySelector('.progress-bar-container');
             
-            // 드래그 중에는 setSeekTime을 호출하여 UI만 실시간 업데이트
             setSeekTime(event, progressBarContainer, currentlyActiveAudio, true); 
         }
 
-        // 7-3. 탐색 종료 (mouseup/touchend)
+        // 8-3. 탐색 종료 (mouseup/touchend)
         function handleSeekEnd(event) {
             if (!isSeeking || !currentlyActiveAudio || !activePlayer) return;
 
             isSeeking = false;
             event.preventDefault(); 
             
-            // ⭐️ 터치 드래그 직후 발생하는 클릭/터치 이벤트 무시 (오작동 방지)
             blockOutsideClick = true; 
             setTimeout(() => { blockOutsideClick = false; }, 300);
 
@@ -1743,13 +1730,13 @@
             const audio = document.getElementById(audioId);
             const progressBarContainer = activePlayer.querySelector('.progress-bar-container');
             
-            // 최종 seekTime 계산 및 UI 업데이트
+            // ⭐️ 수정: 최종 seekTime을 다시 계산 (Android touchend 좌표 안정성 확보)
             const seekTime = setSeekTime(event, progressBarContainer, audio); 
             
             // 1. 오디오 재생 시간 설정 (Seeking)
             audio.currentTime = seekTime; 
             
-            // 2. 드래그 전에 재생 중이었다면 재생 재개 (문제 2 해결의 핵심)
+            // 2. 드래그 전에 재생 중이었다면 재생 재개 
             if (wasPlayingBeforeSeek) {
                 audio.play().catch(e => console.error("Failed to resume playback after seek:", e));
                 
@@ -1760,13 +1747,11 @@
                 btn.dataset.state = 'playing';
             }
             
-            // 상태 초기화
             wasPlayingBeforeSeek = false;
         }
 
-        // 8. 플레이어 외부 터치/클릭 시 동작
+        // 9. 플레이어 외부 터치/클릭 시 동작 (시간 유지하고 UI만 닫기)
         function handleOutsideClick(event) {
-            // Seek 종료 직후 발생한 click/touchend 이벤트는 무시
             if (blockOutsideClick || isSeeking) { 
                 return;
             } 
@@ -1774,7 +1759,6 @@
             let target = event.target;
             let isInsidePlayer = false;
 
-            // 1. 클릭된 요소가 플레이어 내부 또는 🔊 버튼 내부인지 확인
             while (target && target !== document.body) {
                 if (injectedPlayerRow && injectedPlayerRow.contains(target)) {
                     isInsidePlayer = true;
@@ -1787,23 +1771,23 @@
                 target = target.parentElement;
             }
 
-            // 2. 외부를 클릭했고, 현재 활성화된 오디오가 있다면 닫습니다.
             if (!isInsidePlayer && currentlyActiveAudio) {
-                resetPlayer(currentlyActiveAudio);
+                const currentAudioId = currentlyActiveAudio.id;
+                resetAudioState(currentlyActiveAudio, false); // 시간 유지, 일시정지
+                closePlayerUI(currentAudioId); // UI만 닫기
             }
         }
         
-        // 9. 오디오 컨텍스트 활성화 (iOS/Safari 자동 재생 정책 대응)
+        // 10. 오디오 컨텍스트 활성화 (iOS/Safari 자동 재생 정책 대응)
         function wakeUpAudioContext() {
             const allAudio = document.querySelectorAll('audio');
             let playedSuccessfully = false;
 
             allAudio.forEach(audio => {
-                // 오디오 메타데이터가 로드되지 않았거나 (readyState < 1), 오디오 컨텍스트가 닫혀있다면
-                if (audio.readyState < 1 || audio.paused || audio.currentTime === 0) {
-                    audio.load(); // 오디오를 강제로 로드
+                if (audio.readyState < 1 || isNaN(audio.duration) || audio.paused || audio.currentTime === 0) {
+                    audio.load(); 
                     audio.play().then(() => {
-                        audio.pause(); // 성공하면 바로 멈춤 (컨텍스트 활성화 목적)
+                        audio.pause(); 
                         playedSuccessfully = true;
                     }).catch(error => {
                         // console.warn(`Audio ${audio.id} context activation attempted.`, error.message);
@@ -1811,7 +1795,6 @@
                 }
             });
             
-            // 한 번이라도 성공했거나, 시도를 마쳤다면 리스너 제거
             if (playedSuccessfully) {
                  document.removeEventListener('touchstart', wakeUpAudioContext);
                  document.removeEventListener('click', wakeUpAudioContext);
@@ -1821,7 +1804,7 @@
 
         // 페이지 로드 후 모든 리스너 연결
         document.addEventListener('DOMContentLoaded', () => {
-             // 7-1. 탐색 시작 리스너를 모든 프로그레스바 컨테이너에 연결합니다.
+             // 8-1. 탐색 시작 리스너를 모든 프로그레스바 컨테이너에 연결합니다.
             document.querySelectorAll('.progress-bar-container').forEach(container => {
                 container.addEventListener('mousedown', handleSeekStart);
                 container.addEventListener('touchstart', handleSeekStart, { passive: false });
