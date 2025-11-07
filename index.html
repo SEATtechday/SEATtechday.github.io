@@ -94,6 +94,7 @@
             display: block;
             width: 30px;
             height: 30px;
+            min-width: 30px; /* 플레이어 버튼 너비와 맞춤 */
             margin: 0 auto;
             background-color: #cc0000;
             color: white;
@@ -127,21 +128,21 @@
             height: 50px; 
             background-color: #4a90e2; 
             border-radius: 4px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); /* 그림자 강화 */
             padding: 0 10px;
             box-sizing: border-box;
             cursor: default; 
             display: none;
         }
         
-        /* 📣 활성화 상태: 해당 <tr>의 전체 영역을 덮도록 설정 (위치 오류 해결 핵심) */
+        /* 📣 활성화 상태: 해당 <tr>의 전체 영역을 덮도록 설정 */
+        /* height: 100% 제거 - JS에서 동적으로 N+1 행의 높이를 덮도록 설정 */
         .custom-audio-player.active {
             display: flex;
             position: absolute; 
-            top: 0; 
+            /* top/height는 JS에서 동적으로 설정 */
             transform: none; 
-            height: 100%; /* <tr> 높이 전체를 덮도록 설정 */
-            width: 100%; 
+            width: 100%; /* <tr> 폭 전체를 덮도록 유지 (테이블 폭과 동일) */
             left: 0; 
             z-index: 10;
         }
@@ -236,14 +237,14 @@
             
             /* 📣 모바일에서 플레이어를 행의 너비에 맞춰 크게 표시 */
             .custom-audio-player.active {
-                height: 100%; 
+                /* height, top은 JS에서 동적으로 설정 */
                 width: 100%; 
                 left: 0; 
                 right: auto; 
                 margin-left: 0; 
-                top: 0;
                 transform: none; 
                 padding: 0 5px; 
+                align-items: center; /* 높이가 가변적이므로 중앙 정렬 */
             }
         }
     </style>
@@ -1432,7 +1433,7 @@
         }
 
         // 2. 플레이어 UI 업데이트 함수
-        function updateProgressBar(audio, playerElement) {
+        function function updateProgressBar(audio, playerElement) {
             if (!audio || !playerElement || !isFinite(audio.duration) || audio.duration === 0) return;
             
             const currentTime = audio.currentTime;
@@ -1480,6 +1481,10 @@
             playerElement.classList.remove('active');
             playerElement.style.display = 'none';
 
+            // 💡 [수정] N+1 행 오버레이를 위한 inline 스타일 초기화 (위치 복원)
+            playerElement.style.top = '';
+            playerElement.style.height = '';
+
             // 버튼 초기화
             const btn = playerElement.querySelector('.play-pause-btn');
             btn.textContent = '▶';
@@ -1507,7 +1512,8 @@
             // 4-1. 다른 오디오가 재생 중이라면 중지 및 초기화
             if (currentlyActiveAudio && currentlyActiveAudio.id !== audioId) {
                 const prevAudio = currentlyActiveAudio;
-                let prevPlayer = prevAudio.closest('.custom-audio-player');
+                // document.querySelector를 사용하여 prevPlayer 찾기 (가장 안정적)
+                const prevPlayer = document.querySelector(`.custom-audio-player.active[data-audio-id="${prevAudio.id}"]`);
                 if (prevPlayer) {
                     resetPlayer(prevAudio, prevPlayer);
                 }
@@ -1547,75 +1553,92 @@
             }
             const audioToActivate = document.getElementById(audioId);
             const playerToActivate = boxElement.nextElementSibling;
-            const timeDisplay = playerToActivate.querySelector('.time-display');
+            
+            // 0. 현재 행과 다음 행 찾기
+            const currentTr = boxElement.closest('tr');
+            let targetTr = currentTr.nextElementSibling;
+
+            // 💡 [추가] 분리자 행(separator-row) 건너뛰기
+            while (targetTr && targetTr.classList.contains('separator-row')) {
+                targetTr = targetTr.nextElementSibling;
+            }
 
             // 5-1. 이미 다른 플레이어가 활성화된 경우: 모두 정리
             if (currentlyActiveAudio && currentlyActiveAudio.id !== audioId) {
                 const prevAudio = currentlyActiveAudio;
-                let prevPlayer = prevAudio.closest('.custom-audio-player');
+                // document.querySelector를 사용하여 prevPlayer 찾기 (가장 안정적)
+                const prevPlayer = document.querySelector(`.custom-audio-player.active[data-audio-id="${prevAudio.id}"]`);
                 if (prevPlayer) {
-                    prevAudio.pause();
                     resetPlayer(prevAudio, prevPlayer);
                 }
             }
+            currentlyActiveAudio = audioToActivate;
+
 
             // 5-2. 현재 플레이어 활성화/비활성화 토글
             if (playerToActivate.classList.contains('active')) {
                 // 비활성화 (닫기)
                 resetPlayer(audioToActivate, playerToActivate);
+                
             } else {
                 // 활성화 (열기)
-                playerToActivate.style.display = 'flex';
+                if (!targetTr) {
+                    console.warn("Target row (N+1) not found for player offset.");
+                    // N+1 행이 없으면 현재 행에 오버레이
+                    playerToActivate.style.top = '0';
+                    playerToActivate.style.height = currentTr.offsetHeight + 'px';
+                } else {
+                    // 💡 [수정] 플레이어 위치 및 크기 설정 (N+1 행을 덮도록)
+                    const topOffset = currentTr.offsetHeight; // N번 행의 높이만큼 오프셋
+                    const targetHeight = targetTr.offsetHeight; // N+1 행의 높이
+
+                    playerToActivate.style.top = topOffset + 'px';
+                    playerToActivate.style.height = targetHeight + 'px';
+                }
+                
                 // 🔊 아이콘 숨기기
                 boxElement.style.display = 'none';
 
-                // duration이 로드되지 않았다면 로드 시도를 유도
+                // UI 업데이트 및 활성화
                 if (isNaN(audioToActivate.duration) || audioToActivate.duration === 0) {
                     audioToActivate.addEventListener('loadedmetadata', () => {
                         updateProgressBar(audioToActivate, playerToActivate);
                     }, { once: true });
-                    // audioToActivate.load(); // preload="auto"가 처리하므로 생략 가능
                 }
-                
-                // UI 업데이트 (최초 시간 표시)
                 updateProgressBar(audioToActivate, playerToActivate);
                 
                 // 플레이어 활성화
                 setTimeout(() => {
                     playerToActivate.classList.add('active');
-                }, 10); // CSS transition을 위한 약간의 지연
-
-                // 전역 상태 업데이트
-                currentlyActiveAudio = audioToActivate;
+                }, 10); 
             }
         }
 
         // 6. 플레이어 외부 클릭 시 닫기 (드래그 중이 아닐 때만)
         function handleOutsideClick(event) {
-            if (currentlyActiveAudio) {
+            if (currentlyActiveAudio && !isSeeking) {
+                // 💡 [수정] 현재 활성화된 오디오에 대응하는 플레이어 요소를 찾습니다.
+                const playerElement = document.querySelector(`.custom-audio-player.active[data-audio-id="${currentlyActiveAudio.id}"]`);
+                
+                if (!playerElement) return; // 활성화된 플레이어가 없다면 리턴
+
                 let target = event.target;
                 let isInsidePlayer = false;
-                
+
                 // 클릭된 요소가 플레이어 내부인지 확인
+                // (🔊 버튼 또는 프로그레스바 영역 전체)
                 while (target && target !== document.body) {
-                    if (target.classList && target.classList.contains('custom-audio-player')) {
+                    if (target === playerElement || target.classList.contains('audio-box')) {
                         isInsidePlayer = true;
-                        break;
-                    }
-                    if (target.classList && target.classList.contains('audio-box')) {
-                        isInsidePlayer = true; // 🔊 버튼 클릭도 내부 상호작용으로 간주
                         break;
                     }
                     target = target.parentNode;
                 }
 
-                // 플레이어 외부를 클릭했고, 현재 탐색 중이 아니라면 플레이어 닫기
-                if (!isInsidePlayer && !isSeeking) {
-                    const playerElement = currentlyActiveAudio.closest('.custom-audio-player');
-                    if (playerElement) {
-                        currentlyActiveAudio.pause();
-                        resetPlayer(currentlyActiveAudio, playerElement);
-                    }
+                // 플레이어 외부를 클릭했다면 플레이어 닫기
+                if (!isInsidePlayer) {
+                    currentlyActiveAudio.pause();
+                    resetPlayer(currentlyActiveAudio, playerElement);
                 }
             }
         }
@@ -1679,7 +1702,7 @@
             }
         }
         
-        // 탐색 종료 (수정됨: iOS 대응 로직 추가)
+        // 탐색 종료 (iOS 대응 로직 포함)
         function handleSeekEnd(event) {
             if (!activePlayer) return;
             isSeeking = false;
@@ -1690,7 +1713,8 @@
             const audio = document.getElementById(audioId);
             const progressBarContainer = activePlayer.querySelector('.progress-bar-container');
             const btn = activePlayer.querySelector('.play-pause-btn');
-            const wasPlayingBeforeSeek = btn.dataset.state === 'playing'; // 드래그 시작 시점의 상태
+            // 드래그 시작 시점의 상태를 기준으로 재생 여부 판단
+            const wasPlayingBeforeSeek = btn.dataset.state === 'playing'; 
             
             // 1. 최종 탐색 위치 계산
             const rect = progressBarContainer.getBoundingClientRect();
@@ -1759,7 +1783,6 @@
             });
             
             // 한 번이라도 성공했거나, 시도를 마쳤다면 리스너 제거
-            // iOS는 첫 상호작용 후 1회에 한해 AudioContext를 활성화 시키므로, 리스너를 제거해야 중복 실행을 막고 성능을 유지할 수 있습니다.
             if (playedSuccessfully) {
                  document.removeEventListener('touchstart', wakeUpAudioContext);
                  document.removeEventListener('click', wakeUpAudioContext);
@@ -1780,7 +1803,6 @@
         });
 
         // 문서 로드 후, 첫 터치(모바일) 또는 클릭(PC)에 리스너를 붙여 오디오 컨텍스트를 깨웁니다.
-        // ⭐️ click 이벤트 추가 (iOS에서 터치뿐만 아니라 클릭 상호작용도 허용)
         document.addEventListener('touchstart', wakeUpAudioContext, { once: true });
         document.addEventListener('click', wakeUpAudioContext, { once: true });
     </script>
