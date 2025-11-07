@@ -123,7 +123,7 @@
         /* --- 커스텀 플레이어 스타일 (공통) --- */
 
         .custom-audio-player {
-            display: flex;
+            display: none; /* 💡 수정: 기본적으로 숨김 상태 유지 */
             align-items: center;
             height: 50px; 
             background-color: #4a90e2; 
@@ -132,11 +132,10 @@
             padding: 0 10px;
             box-sizing: border-box;
             cursor: default; 
-            display: none;
+            
         }
         
         /* 📣 활성화 상태: 해당 <tr>의 전체 영역을 덮도록 설정 */
-        /* height: 100% 제거 - JS에서 동적으로 N+1 행의 높이를 덮도록 설정 */
         .custom-audio-player.active {
             display: flex;
             position: absolute; 
@@ -1433,7 +1432,7 @@
         }
 
         // 2. 플레이어 UI 업데이트 함수
-        function function updateProgressBar(audio, playerElement) {
+        function updateProgressBar(audio, playerElement) {
             if (!audio || !playerElement || !isFinite(audio.duration) || audio.duration === 0) return;
             
             const currentTime = audio.currentTime;
@@ -1479,9 +1478,11 @@
             audio.pause();
             stopProgressUpdate(audio.id);
             playerElement.classList.remove('active');
-            playerElement.style.display = 'none';
+            
+            // 💡 [수정] 플레이어를 CSS 정의대로 확실히 숨김
+            playerElement.style.display = 'none'; 
 
-            // 💡 [수정] N+1 행 오버레이를 위한 inline 스타일 초기화 (위치 복원)
+            // 💡 N+1 행 오버레이를 위한 inline 스타일 초기화 (위치 복원)
             playerElement.style.top = '';
             playerElement.style.height = '';
 
@@ -1558,7 +1559,7 @@
             const currentTr = boxElement.closest('tr');
             let targetTr = currentTr.nextElementSibling;
 
-            // 💡 [추가] 분리자 행(separator-row) 건너뛰기
+            // 💡 분리자 행(separator-row) 건너뛰기
             while (targetTr && targetTr.classList.contains('separator-row')) {
                 targetTr = targetTr.nextElementSibling;
             }
@@ -1588,7 +1589,7 @@
                     playerToActivate.style.top = '0';
                     playerToActivate.style.height = currentTr.offsetHeight + 'px';
                 } else {
-                    // 💡 [수정] 플레이어 위치 및 크기 설정 (N+1 행을 덮도록)
+                    // 💡 플레이어 위치 및 크기 설정 (N+1 행을 덮도록)
                     const topOffset = currentTr.offsetHeight; // N번 행의 높이만큼 오프셋
                     const targetHeight = targetTr.offsetHeight; // N+1 행의 높이
 
@@ -1607,17 +1608,16 @@
                 }
                 updateProgressBar(audioToActivate, playerToActivate);
                 
-                // 플레이어 활성화
-                setTimeout(() => {
-                    playerToActivate.classList.add('active');
-                }, 10); 
+                // ⭐️ [오류 수정] display 속성을 바로 'flex'로 설정하여 즉시 표시
+                playerToActivate.style.display = 'flex';
+                playerToActivate.classList.add('active');
             }
         }
 
         // 6. 플레이어 외부 클릭 시 닫기 (드래그 중이 아닐 때만)
         function handleOutsideClick(event) {
             if (currentlyActiveAudio && !isSeeking) {
-                // 💡 [수정] 현재 활성화된 오디오에 대응하는 플레이어 요소를 찾습니다.
+                // 💡 현재 활성화된 오디오에 대응하는 플레이어 요소를 찾습니다.
                 const playerElement = document.querySelector(`.custom-audio-player.active[data-audio-id="${currentlyActiveAudio.id}"]`);
                 
                 if (!playerElement) return; // 활성화된 플레이어가 없다면 리턴
