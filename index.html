@@ -163,31 +163,39 @@
 
 /* 재생/일시정지 버튼 스타일 */
 .play-pause-btn {
-    /* ... (기존 스타일 유지) ... */
-    
-    /* ⭐️ 폰트 스타일 강제: 'II'가 깨끗한 막대처럼 보이도록 */
-    /* 이 부분은 재생 버튼(▶)의 스타일 일관성을 위해 유지하거나, */
-    /* 아래 playing 스타일이 적용되면 무시됩니다. */
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    background-color: transparent; 
+    border-radius: 0; 
+    color: white; 
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2em; /* 재생 버튼 크기 유지 */
+    cursor: pointer;
+    margin-right: 10px;
+    user-select: none; 
+
+    /* ⭐️⭐️ 폰트 스타일 강제: 'II'가 깨끗한 막대처럼 보이도록 */
     font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-    font-weight: 900; 
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    font-weight: 900; /* 굵게 만들어 막대처럼 보이게 */
 }
 
-/* ⭐️⭐️⭐️ 최종 해결책: 일시정지 상태 (II 텍스트를 SVG로 대체) ⭐️⭐️⭐️ */
+/* ⭐️⭐️ 일시정지 상태 (II로 대체) 스타일 수정 */
 .play-pause-btn.playing {
-    /* 1. II 텍스트를 안 보이게 숨김 */
-    font-size: 0;
-    letter-spacing: normal;
-    padding: 0;
-    font-weight: normal;
-
-    /* 2. 흰색 일시정지 아이콘(SVG)을 배경 이미지로 삽입 */
-    /* data:image/svg+xml은 파일 업로드 없이 아이콘을 CSS 안에 직접 삽입합니다. */
-    background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik02IDE5aDRWNUg2djE0em04LTE0djE0aDRWNWgtNHoiLz48L3N2Zy4+');
+    /* 기존 스타일 (유니코드 ⏸ 사용 시): */
+    /* font-size: 1.0em; 
+    letter-spacing: -2px; 
+    padding-left: 1px; */
     
-    /* 3. 배경 이미지 설정 */
-    background-size: 60%; /* 버튼 크기 30px에 맞게 60% 정도가 적절 */
-    background-repeat: no-repeat;
-    background-position: center;
+    /* ⭐️ 'II'를 일시정지처럼 보이게 하기 위한 수정 */
+    font-size: 1.2em; /* 재생 버튼과 동일한 크기로 유지 */
+    letter-spacing: -0.2em; /* I I 사이 간격을 좁혀서 ⏸처럼 보이게 */
+    padding-right: 1px; /* 미세한 중앙 정렬 조정 */
+    padding-bottom: 2px; /* 세로 중앙 정렬 조정 */
 }
         
         /* 진행 바와 시간 표시를 감싸는 래퍼 */
